@@ -432,6 +432,21 @@ input[type="text"]::placeholder {
     display: none !important;
 }
 
+.help-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.help-link:hover {
+    color: var(--primary);
+    text-decoration: underline;
+}
+
 /* Responsividade */
 @media (max-width: 600px) {
     .container {
