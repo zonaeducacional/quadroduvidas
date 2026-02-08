@@ -1,6 +1,6 @@
-// Firebase Configuration & Imports
+// Firebase Configuration & Imports (Firestore)
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-import { getDatabase, ref, push, set, onValue, remove, update, onChildAdded, onChildChanged, onChildRemoved } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
 const firebaseConfig = {
     apiKey: "AIzaSyAEZ4F6kd_ABom-iYJFehV4GjRzRC5atOQ",
@@ -8,12 +8,11 @@ const firebaseConfig = {
     projectId: "quadro-de-perguntas",
     storageBucket: "quadro-de-perguntas.firebasestorage.app",
     messagingSenderId: "590722839219",
-    appId: "1:590722839219:web:0c598502ccebb57bd076c6",
-    databaseURL: "https://quadro-de-perguntas-default-rtdb.firebaseio.com"
+    appId: "1:590722839219:web:0c598502ccebb57bd076c6"
 };
 
 const app = initializeApp(firebaseConfig);
-const database = getDatabase(app);
+const db = getFirestore(app);
 
 // Estado Global
 let isProfessorMode = false;
@@ -21,7 +20,7 @@ let currentDoubtId = null;
 let deferredPrompt = null;
 let currentRoomCode = localStorage.getItem('currentRoom') || null;
 let doubts = {};
-let unsubscribeListeners = [];
+let unsubscribeListener = null;
 
 // Elementos DOM
 const installBtn = document.getElementById('installBtn');
@@ -111,16 +110,10 @@ function generateRoomCode() {
     return code;
 }
 
-function createRoom() {
+async function createRoom() {
     const newRoomCode = generateRoomCode();
     currentRoomCode = newRoomCode;
     localStorage.setItem('currentRoom', newRoomCode);
-
-    // Cria a sala no Firebase
-    set(ref(database, `rooms/${newRoomCode}/info`), {
-        createdAt: Date.now(),
-        createdBy: 'professor'
-    });
 
     currentRoomCodeDisplay.textContent = newRoomCode;
     roomInfo.classList.remove('hidden');
@@ -147,12 +140,13 @@ function joinExistingRoom(code) {
     roomModal.classList.remove('visible');
     headerRoomCode.textContent = code;
 
-    // Limpa listeners anteriores
-    unsubscribeListeners.forEach(unsub => unsub());
-    unsubscribeListeners = [];
+    // Limpa listener anterior
+    if (unsubscribeListener) {
+        unsubscribeListener();
+    }
 
-    // Configura listeners do Firebase
-    setupFirebaseListeners(code);
+    // Configura listener do Firestore
+    setupFirestoreListener(code);
     showToast(`✅ Conectado à sala ${code}`);
 }
 
@@ -161,34 +155,22 @@ function copyRoomCode() {
     showToast('📋 Código copiado!');
 }
 
-// Firebase Listeners
-function setupFirebaseListeners(roomCode) {
-    const doubtsRef = ref(database, `rooms/${roomCode}/doubts`);
+// Firestore Listener
+function setupFirestoreListener(roomCode) {
+    const doubtsRef = collection(db, 'rooms', roomCode, 'doubts');
+    const q = query(doubtsRef, orderBy('timestamp', 'desc'));
 
-    // Listener para novos itens
-    const addedListener = onChildAdded(doubtsRef, (snapshot) => {
-        const doubt = snapshot.val();
-        doubts[snapshot.key] = { ...doubt, id: snapshot.key };
+    unsubscribeListener = onSnapshot(q, (snapshot) => {
+        doubts = {};
+        snapshot.forEach((doc) => {
+            doubts[doc.id] = { ...doc.data(), id: doc.id };
+        });
         renderDoubts();
         updateStats();
+    }, (error) => {
+        console.error('Erro ao escutar mudanças:', error);
+        showToast('⚠️ Erro de conexão com o Firebase');
     });
-
-    // Listener para itens modificados
-    const changedListener = onChildChanged(doubtsRef, (snapshot) => {
-        const doubt = snapshot.val();
-        doubts[snapshot.key] = { ...doubt, id: snapshot.key };
-        renderDoubts();
-        updateStats();
-    });
-
-    // Listener para itens removidos
-    const removedListener = onChildRemoved(doubtsRef, (snapshot) => {
-        delete doubts[snapshot.key];
-        renderDoubts();
-        updateStats();
-    });
-
-    unsubscribeListeners.push(addedListener, changedListener, removedListener);
 }
 
 // Instalar PWA
@@ -215,7 +197,7 @@ function toggleProfessorMode() {
 }
 
 // Gerenciamento de Dúvidas
-function submitDoubt() {
+async function submitDoubt() {
     if (!currentRoomCode) {
         showToast('❌ Entre em uma sala primeiro');
         return;
@@ -240,15 +222,20 @@ function submitDoubt() {
         isAnonymous: true
     };
 
-    const doubtsRef = ref(database, `rooms/${currentRoomCode}/doubts`);
-    push(doubtsRef, doubt);
+    try {
+        const doubtsRef = collection(db, 'rooms', currentRoomCode, 'doubts');
+        await addDoc(doubtsRef, doubt);
 
-    doubtInput.value = '';
-    updateCharCount();
-    showToast('✨ Pergunta enviada com sucesso!');
+        doubtInput.value = '';
+        updateCharCount();
+        showToast('✨ Pergunta enviada com sucesso!');
+    } catch (error) {
+        console.error('Erro ao enviar dúvida:', error);
+        showToast('❌ Erro ao enviar. Tente novamente.');
+    }
 }
 
-function voteDoubt(doubtId) {
+async function voteDoubt(doubtId) {
     if (!currentRoomCode) return;
 
     const doubt = doubts[doubtId];
@@ -257,18 +244,25 @@ function voteDoubt(doubtId) {
     const userId = getOrCreateUserId();
     const hasVoted = doubt.voters && doubt.voters[userId];
 
-    const doubtRef = ref(database, `rooms/${currentRoomCode}/doubts/${doubtId}`);
+    const doubtRef = doc(db, 'rooms', currentRoomCode, 'doubts', doubtId);
 
-    if (hasVoted) {
-        update(doubtRef, {
-            votes: (doubt.votes || 0) - 1,
-            [`voters/${userId}`]: null
-        });
-    } else {
-        update(doubtRef, {
-            votes: (doubt.votes || 0) + 1,
-            [`voters/${userId}`]: true
-        });
+    try {
+        if (hasVoted) {
+            const newVoters = { ...doubt.voters };
+            delete newVoters[userId];
+            await updateDoc(doubtRef, {
+                votes: Math.max(0, (doubt.votes || 0) - 1),
+                voters: newVoters
+            });
+        } else {
+            await updateDoc(doubtRef, {
+                votes: (doubt.votes || 0) + 1,
+                [`voters.${userId}`]: true
+            });
+        }
+    } catch (error) {
+        console.error('Erro ao votar:', error);
+        showToast('❌ Erro ao votar');
     }
 }
 
@@ -294,7 +288,7 @@ function openAnswerModal(doubtId) {
     answerInput.focus();
 }
 
-function submitAnswer() {
+async function submitAnswer() {
     if (!currentDoubtId || !currentRoomCode) return;
 
     const answer = answerInput.value.trim();
@@ -303,14 +297,20 @@ function submitAnswer() {
         return;
     }
 
-    const doubtRef = ref(database, `rooms/${currentRoomCode}/doubts/${currentDoubtId}`);
-    update(doubtRef, {
-        answer: answer,
-        answeredAt: Date.now()
-    });
+    const doubtRef = doc(db, 'rooms', currentRoomCode, 'doubts', currentDoubtId);
 
-    closeModal();
-    showToast('✅ Resposta publicada!');
+    try {
+        await updateDoc(doubtRef, {
+            answer: answer,
+            answeredAt: Date.now()
+        });
+
+        closeModal();
+        showToast('✅ Resposta publicada!');
+    } catch (error) {
+        console.error('Erro ao responder:', error);
+        showToast('❌ Erro ao publicar resposta');
+    }
 }
 
 function closeModal() {
@@ -319,23 +319,37 @@ function closeModal() {
     answerInput.value = '';
 }
 
-function deleteDoubt(doubtId) {
+async function deleteDoubt(doubtId) {
     if (!isProfessorMode || !currentRoomCode) return;
 
     if (confirm('Tem certeza que deseja excluir esta dúvida?')) {
-        const doubtRef = ref(database, `rooms/${currentRoomCode}/doubts/${doubtId}`);
-        remove(doubtRef);
-        showToast('🗑️ Dúvida excluída');
+        const doubtRef = doc(db, 'rooms', currentRoomCode, 'doubts', doubtId);
+        try {
+            await deleteDoc(doubtRef);
+            showToast('🗑️ Dúvida excluída');
+        } catch (error) {
+            console.error('Erro ao excluir:', error);
+            showToast('❌ Erro ao excluir');
+        }
     }
 }
 
-function clearAllDoubts() {
+async function clearAllDoubts() {
     if (!isProfessorMode || !currentRoomCode) return;
 
     if (confirm('Tem certeza que deseja apagar TODAS as dúvidas? Esta ação não pode ser desfeita.')) {
-        const doubtsRef = ref(database, `rooms/${currentRoomCode}/doubts`);
-        remove(doubtsRef);
-        showToast('🧹 Todas as dúvidas foram removidas');
+        try {
+            const deletePromises = Object.keys(doubts).map(doubtId => {
+                const doubtRef = doc(db, 'rooms', currentRoomCode, 'doubts', doubtId);
+                return deleteDoc(doubtRef);
+            });
+
+            await Promise.all(deletePromises);
+            showToast('🧹 Todas as dúvidas foram removidas');
+        } catch (error) {
+            console.error('Erro ao limpar:', error);
+            showToast('❌ Erro ao limpar dúvidas');
+        }
     }
 }
 
