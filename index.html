@@ -23,10 +23,40 @@
 
 <body>
     <div class="container">
+        <!-- Modal de Entrada na Sala -->
+        <div id="roomModal" class="modal visible">
+            <div class="modal-content">
+                <h2>🔮 Entrar na Sala</h2>
+                <p class="modal-question">Digite o código da sala fornecido pelo professor:</p>
+                <input type="text" id="roomCodeInput" placeholder="Ex: SALA2026" maxlength="20"
+                    style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--card-border); background: rgba(0,0,0,0.2); color: white; font-size: 1rem; margin: 15px 0;">
+                <div class="modal-actions">
+                    <button id="createRoomBtn" class="btn-secondary">Criar Nova Sala</button>
+                    <button id="joinRoomBtn" class="btn-primary">Entrar</button>
+                </div>
+                <div id="roomInfo" class="hidden"
+                    style="margin-top: 20px; padding: 15px; background: rgba(139, 92, 246, 0.1); border-radius: 12px; border: 1px solid rgba(139, 92, 246, 0.3);">
+                    <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px;">Código da Sala:</p>
+                    <p id="currentRoomCode"
+                        style="font-size: 1.5rem; font-weight: 700; color: var(--primary); letter-spacing: 2px;"></p>
+                    <button id="copyRoomCodeBtn" class="btn-secondary" style="margin-top: 10px; width: 100%;">📋 Copiar
+                        Código</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Cabeçalho -->
         <header>
-            <h1>🔮 Dúvidas EDU</h1>
+            <div>
+                <h1>🔮 Dúvidas EDU</h1>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 5px;">
+                    Sala: <span id="headerRoomCode" style="color: var(--primary); font-weight: 600;">---</span>
+                </p>
+            </div>
             <div class="header-controls">
+                <button id="changeRoomBtn" class="btn-secondary">
+                    🚪 Trocar Sala
+                </button>
                 <button id="installBtn" class="btn-install">
                     <span>📲</span> Instalar App
                 </button>
@@ -41,7 +71,7 @@
             <h2>👨‍🏫 Painel do Professor</h2>
             <div class="professor-controls">
                 <button id="clearAllBtn" class="btn-danger">Limpar Todas</button>
-                <button id="exportBtn" class="btn-secondary">Exportar (CSV)</button>
+                <button id="exportBtn" class="btn-secondary">Exportar (JSON)</button>
             </div>
         </div>
 
@@ -75,7 +105,7 @@
             </div>
         </div>
 
-        <!-- Modal -->
+        <!-- Modal de Resposta -->
         <div id="answerModal" class="modal">
             <div class="modal-content">
                 <h3>Responder Dúvida</h3>
@@ -92,7 +122,7 @@
         <div id="toast" class="toast hidden"></div>
     </div>
 
-    <script src="app.js"></script>
+    <script type="module" src="app.js"></script>
 </body>
 
 </html>

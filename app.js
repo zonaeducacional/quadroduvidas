@@ -1,8 +1,27 @@
-// Configuração inicial
+// Firebase Configuration & Imports
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+import { getDatabase, ref, push, set, onValue, remove, update, onChildAdded, onChildChanged, onChildRemoved } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+
+const firebaseConfig = {
+    apiKey: "AIzaSyAEZ4F6kd_ABom-iYJFehV4GjRzRC5atOQ",
+    authDomain: "quadro-de-perguntas.firebaseapp.com",
+    projectId: "quadro-de-perguntas",
+    storageBucket: "quadro-de-perguntas.firebasestorage.app",
+    messagingSenderId: "590722839219",
+    appId: "1:590722839219:web:0c598502ccebb57bd076c6",
+    databaseURL: "https://quadro-de-perguntas-default-rtdb.firebaseio.com"
+};
+
+const app = initializeApp(firebaseConfig);
+const database = getDatabase(app);
+
+// Estado Global
 let isProfessorMode = false;
 let currentDoubtId = null;
 let deferredPrompt = null;
-let doubts = JSON.parse(localStorage.getItem('doubts')) || [];
+let currentRoomCode = localStorage.getItem('currentRoom') || null;
+let doubts = {};
+let unsubscribeListeners = [];
 
 // Elementos DOM
 const installBtn = document.getElementById('installBtn');
@@ -24,6 +43,15 @@ const answerInput = document.getElementById('answerInput');
 const cancelBtn = document.getElementById('cancelBtn');
 const submitAnswerBtn = document.getElementById('submitAnswerBtn');
 const toast = document.getElementById('toast');
+const roomModal = document.getElementById('roomModal');
+const roomCodeInput = document.getElementById('roomCodeInput');
+const joinRoomBtn = document.getElementById('joinRoomBtn');
+const createRoomBtn = document.getElementById('createRoomBtn');
+const changeRoomBtn = document.getElementById('changeRoomBtn');
+const headerRoomCode = document.getElementById('headerRoomCode');
+const roomInfo = document.getElementById('roomInfo');
+const currentRoomCodeDisplay = document.getElementById('currentRoomCode');
+const copyRoomCodeBtn = document.getElementById('copyRoomCodeBtn');
 
 // Event Listeners
 document.addEventListener('DOMContentLoaded', initApp);
@@ -36,31 +64,131 @@ clearAllBtn.addEventListener('click', clearAllDoubts);
 exportBtn.addEventListener('click', exportDoubts);
 cancelBtn.addEventListener('click', closeModal);
 submitAnswerBtn.addEventListener('click', submitAnswer);
+joinRoomBtn.addEventListener('click', joinRoom);
+createRoomBtn.addEventListener('click', createRoom);
+changeRoomBtn.addEventListener('click', () => {
+    roomModal.classList.add('visible');
+    roomInfo.classList.add('hidden');
+});
+copyRoomCodeBtn.addEventListener('click', copyRoomCode);
 
 // PWA Installation
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredPrompt = e;
-    installBtn.style.display = 'block';
+    installBtn.style.display = 'flex';
 });
 
 // Inicialização
 function initApp() {
-    renderDoubts();
-    updateStats();
     checkServiceWorker();
+    if (currentRoomCode) {
+        joinExistingRoom(currentRoomCode);
+    } else {
+        roomModal.classList.add('visible');
+    }
 }
 
 // Service Worker
 async function checkServiceWorker() {
     if ('serviceWorker' in navigator) {
         try {
-            await navigator.serviceWorker.register('service-worker.js');
-            console.log('Service Worker registrado');
+            await navigator.serviceWorker.register('sw.js');
+            console.log('✅ Service Worker registrado');
         } catch (error) {
-            console.error('Falha no Service Worker:', error);
+            console.error('❌ Falha no Service Worker:', error);
         }
     }
+}
+
+// Gerenciamento de Salas
+function generateRoomCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+}
+
+function createRoom() {
+    const newRoomCode = generateRoomCode();
+    currentRoomCode = newRoomCode;
+    localStorage.setItem('currentRoom', newRoomCode);
+
+    // Cria a sala no Firebase
+    set(ref(database, `rooms/${newRoomCode}/info`), {
+        createdAt: Date.now(),
+        createdBy: 'professor'
+    });
+
+    currentRoomCodeDisplay.textContent = newRoomCode;
+    roomInfo.classList.remove('hidden');
+    showToast('🎉 Sala criada com sucesso!');
+
+    setTimeout(() => {
+        joinExistingRoom(newRoomCode);
+    }, 2000);
+}
+
+function joinRoom() {
+    const code = roomCodeInput.value.trim().toUpperCase();
+    if (!code) {
+        showToast('❌ Digite um código de sala');
+        return;
+    }
+
+    currentRoomCode = code;
+    localStorage.setItem('currentRoom', code);
+    joinExistingRoom(code);
+}
+
+function joinExistingRoom(code) {
+    roomModal.classList.remove('visible');
+    headerRoomCode.textContent = code;
+
+    // Limpa listeners anteriores
+    unsubscribeListeners.forEach(unsub => unsub());
+    unsubscribeListeners = [];
+
+    // Configura listeners do Firebase
+    setupFirebaseListeners(code);
+    showToast(`✅ Conectado à sala ${code}`);
+}
+
+function copyRoomCode() {
+    navigator.clipboard.writeText(currentRoomCode);
+    showToast('📋 Código copiado!');
+}
+
+// Firebase Listeners
+function setupFirebaseListeners(roomCode) {
+    const doubtsRef = ref(database, `rooms/${roomCode}/doubts`);
+
+    // Listener para novos itens
+    const addedListener = onChildAdded(doubtsRef, (snapshot) => {
+        const doubt = snapshot.val();
+        doubts[snapshot.key] = { ...doubt, id: snapshot.key };
+        renderDoubts();
+        updateStats();
+    });
+
+    // Listener para itens modificados
+    const changedListener = onChildChanged(doubtsRef, (snapshot) => {
+        const doubt = snapshot.val();
+        doubts[snapshot.key] = { ...doubt, id: snapshot.key };
+        renderDoubts();
+        updateStats();
+    });
+
+    // Listener para itens removidos
+    const removedListener = onChildRemoved(doubtsRef, (snapshot) => {
+        delete doubts[snapshot.key];
+        renderDoubts();
+        updateStats();
+    });
+
+    unsubscribeListeners.push(addedListener, changedListener, removedListener);
 }
 
 // Instalar PWA
@@ -82,38 +210,38 @@ async function installPWA() {
 function toggleProfessorMode() {
     isProfessorMode = !isProfessorMode;
     professorPanel.classList.toggle('hidden', !isProfessorMode);
-    // Atualiza o texto e ícone do botão com estilo premium
     modeToggle.innerHTML = isProfessorMode ? '<span>👤</span> Modo Aluno' : '<span>👨‍🏫</span> Modo Professor';
     renderDoubts();
 }
 
 // Gerenciamento de Dúvidas
 function submitDoubt() {
+    if (!currentRoomCode) {
+        showToast('❌ Entre em uma sala primeiro');
+        return;
+    }
+
     const text = doubtInput.value.trim();
     if (!text) {
         showToast('❌ Digite uma dúvida antes de enviar');
         return;
     }
 
-    // Pequeno feedback visual no card ao enviar
     const card = document.querySelector('.new-doubt-card');
     card.style.transform = 'scale(0.98)';
     setTimeout(() => card.style.transform = 'scale(1)', 100);
 
     const doubt = {
-        id: Date.now().toString(),
         text: text,
         votes: 0,
-        hasVoted: false,
+        voters: {},
         answer: '',
-        timestamp: new Date().toISOString(),
+        timestamp: Date.now(),
         isAnonymous: true
     };
 
-    doubts.unshift(doubt);
-    saveDoubts();
-    renderDoubts();
-    updateStats();
+    const doubtsRef = ref(database, `rooms/${currentRoomCode}/doubts`);
+    push(doubtsRef, doubt);
 
     doubtInput.value = '';
     updateCharCount();
@@ -121,25 +249,42 @@ function submitDoubt() {
 }
 
 function voteDoubt(doubtId) {
-    const doubt = doubts.find(d => d.id === doubtId);
+    if (!currentRoomCode) return;
+
+    const doubt = doubts[doubtId];
     if (!doubt) return;
 
-    if (doubt.hasVoted) {
-        doubt.votes--;
-        doubt.hasVoted = false;
-    } else {
-        doubt.votes++;
-        doubt.hasVoted = true;
-    }
+    const userId = getOrCreateUserId();
+    const hasVoted = doubt.voters && doubt.voters[userId];
 
-    saveDoubts();
-    renderDoubts();
+    const doubtRef = ref(database, `rooms/${currentRoomCode}/doubts/${doubtId}`);
+
+    if (hasVoted) {
+        update(doubtRef, {
+            votes: (doubt.votes || 0) - 1,
+            [`voters/${userId}`]: null
+        });
+    } else {
+        update(doubtRef, {
+            votes: (doubt.votes || 0) + 1,
+            [`voters/${userId}`]: true
+        });
+    }
+}
+
+function getOrCreateUserId() {
+    let userId = localStorage.getItem('userId');
+    if (!userId) {
+        userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('userId', userId);
+    }
+    return userId;
 }
 
 function openAnswerModal(doubtId) {
     if (!isProfessorMode) return;
 
-    const doubt = doubts.find(d => d.id === doubtId);
+    const doubt = doubts[doubtId];
     if (!doubt) return;
 
     currentDoubtId = doubtId;
@@ -150,7 +295,7 @@ function openAnswerModal(doubtId) {
 }
 
 function submitAnswer() {
-    if (!currentDoubtId) return;
+    if (!currentDoubtId || !currentRoomCode) return;
 
     const answer = answerInput.value.trim();
     if (!answer) {
@@ -158,66 +303,62 @@ function submitAnswer() {
         return;
     }
 
-    const doubt = doubts.find(d => d.id === currentDoubtId);
-    if (doubt) {
-        doubt.answer = answer;
-        doubt.answeredAt = new Date().toISOString();
-        saveDoubts();
-        renderDoubts();
-        updateStats();
-        closeModal();
-        showToast('✅ Resposta publicada!');
-    }
+    const doubtRef = ref(database, `rooms/${currentRoomCode}/doubts/${currentDoubtId}`);
+    update(doubtRef, {
+        answer: answer,
+        answeredAt: Date.now()
+    });
+
+    closeModal();
+    showToast('✅ Resposta publicada!');
 }
 
 function closeModal() {
-    answerModal.classList.add('hidden');
+    answerModal.classList.remove('visible');
     currentDoubtId = null;
     answerInput.value = '';
 }
 
 function deleteDoubt(doubtId) {
-    if (!isProfessorMode) return;
+    if (!isProfessorMode || !currentRoomCode) return;
 
     if (confirm('Tem certeza que deseja excluir esta dúvida?')) {
-        doubts = doubts.filter(d => d.id !== doubtId);
-        saveDoubts();
-        renderDoubts();
-        updateStats();
+        const doubtRef = ref(database, `rooms/${currentRoomCode}/doubts/${doubtId}`);
+        remove(doubtRef);
         showToast('🗑️ Dúvida excluída');
     }
 }
 
 function clearAllDoubts() {
-    if (!isProfessorMode) return;
+    if (!isProfessorMode || !currentRoomCode) return;
 
     if (confirm('Tem certeza que deseja apagar TODAS as dúvidas? Esta ação não pode ser desfeita.')) {
-        doubts = [];
-        saveDoubts();
-        renderDoubts();
-        updateStats();
+        const doubtsRef = ref(database, `rooms/${currentRoomCode}/doubts`);
+        remove(doubtsRef);
         showToast('🧹 Todas as dúvidas foram removidas');
     }
 }
 
 function exportDoubts() {
-    const dataStr = JSON.stringify(doubts, null, 2);
+    const doubtsArray = Object.values(doubts);
+    const dataStr = JSON.stringify(doubtsArray, null, 2);
     const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
 
-    const exportFileDefaultName = `duvidas-${new Date().toISOString().split('T')[0]}.json`;
+    const exportFileDefaultName = `duvidas-${currentRoomCode}-${new Date().toISOString().split('T')[0]}.json`;
 
     const linkElement = document.createElement('a');
     linkElement.setAttribute('href', dataUri);
     linkElement.setAttribute('download', exportFileDefaultName);
     linkElement.click();
+
+    showToast('📥 Dúvidas exportadas!');
 }
 
 // Renderização
 function renderDoubts() {
     const filter = filterSelect.value;
-    let filteredDoubts = [...doubts];
+    let filteredDoubts = Object.values(doubts);
 
-    // Aplicar filtro
     switch (filter) {
         case 'unanswered':
             filteredDoubts = filteredDoubts.filter(d => !d.answer);
@@ -226,25 +367,30 @@ function renderDoubts() {
             filteredDoubts = filteredDoubts.filter(d => d.answer);
             break;
         case 'mostVoted':
-            filteredDoubts.sort((a, b) => b.votes - a.votes);
+            filteredDoubts.sort((a, b) => (b.votes || 0) - (a.votes || 0));
             break;
+        default:
+            filteredDoubts.sort((a, b) => b.timestamp - a.timestamp);
     }
 
-    // Renderizar
     if (filteredDoubts.length === 0) {
         emptyState.classList.remove('hidden');
         doubtsContainer.innerHTML = '';
     } else {
         emptyState.classList.add('hidden');
-        doubtsContainer.innerHTML = filteredDoubts.map(doubt => `
+        const userId = getOrCreateUserId();
+
+        doubtsContainer.innerHTML = filteredDoubts.map(doubt => {
+            const hasVoted = doubt.voters && doubt.voters[userId];
+            return `
             <div class="doubt-card" data-id="${doubt.id}">
                 <div class="doubt-header">
                     <div class="doubt-text">${escapeHtml(doubt.text)}</div>
                     <div class="doubt-actions">
-                        <button class="vote-btn ${doubt.hasVoted ? 'active' : ''}" 
+                        <button class="vote-btn ${hasVoted ? 'active' : ''}" 
                                 onclick="voteDoubt('${doubt.id}')"
-                                ${!isProfessorMode ? '' : 'disabled'}>
-                            👍 <span class="vote-count">${doubt.votes}</span>
+                                ${isProfessorMode ? 'disabled' : ''}>
+                            👍 <span class="vote-count">${doubt.votes || 0}</span>
                         </button>
                         ${isProfessorMode ? `
                             <button class="answer-btn" onclick="openAnswerModal('${doubt.id}')">
@@ -270,7 +416,7 @@ function renderDoubts() {
                     ${doubt.isAnonymous ? '<span>👤 Anônimo</span>' : ''}
                 </div>
             </div>
-        `).join('');
+        `}).join('');
     }
 }
 
@@ -282,13 +428,10 @@ function updateCharCount() {
 }
 
 function updateStats() {
-    totalDoubts.textContent = doubts.length;
-    const unanswered = doubts.filter(d => !d.answer).length;
+    const doubtsArray = Object.values(doubts);
+    totalDoubts.textContent = doubtsArray.length;
+    const unanswered = doubtsArray.filter(d => !d.answer).length;
     unansweredCount.textContent = unanswered;
-}
-
-function saveDoubts() {
-    localStorage.setItem('doubts', JSON.stringify(doubts));
 }
 
 function showToast(message) {
@@ -300,8 +443,8 @@ function showToast(message) {
     }, 3000);
 }
 
-function formatDate(isoString) {
-    const date = new Date(isoString);
+function formatDate(timestamp) {
+    const date = new Date(timestamp);
     return date.toLocaleString('pt-BR', {
         day: '2-digit',
         month: '2-digit',
@@ -316,11 +459,16 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Tornar funções globais para onclick
+window.voteDoubt = voteDoubt;
+window.openAnswerModal = openAnswerModal;
+window.deleteDoubt = deleteDoubt;
+
 // Offline support
 window.addEventListener('online', () => {
     showToast('✅ Conexão restaurada');
 });
 
 window.addEventListener('offline', () => {
-    showToast('⚠️ Você está offline - suas dúvidas serão salvas localmente');
+    showToast('⚠️ Você está offline');
 });
