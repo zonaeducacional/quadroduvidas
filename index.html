@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dúvidas EDU - Quadro de Dúvidas Anônimo</title>
+    <meta name="description" content="PWA Premium para dúvidas anônimas em sala de aula">
+    <meta name="theme-color" content="#8b5cf6">
+
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icons/icon-192.png" type="image/png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+    <!-- iOS Splash Screen -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Dúvidas EDU">
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Cabeçalho -->
+        <header>
+            <h1>🔮 Dúvidas EDU</h1>
+            <div class="header-controls">
+                <button id="installBtn" class="btn-install">
+                    <span>📲</span> Instalar App
+                </button>
+                <button id="modeToggle" class="btn-mode">
+                    <span>👤</span> Modo Aluno
+                </button>
+            </div>
+        </header>
+
+        <!-- Painel do Professor -->
+        <div id="professorPanel" class="panel hidden">
+            <h2>👨‍🏫 Painel do Professor</h2>
+            <div class="professor-controls">
+                <button id="clearAllBtn" class="btn-danger">Limpar Todas</button>
+                <button id="exportBtn" class="btn-secondary">Exportar (CSV)</button>
+            </div>
+        </div>
+
+        <!-- Formulário -->
+        <div class="new-doubt-card">
+            <h3>Fazer uma pergunta</h3>
+            <textarea id="doubtInput" aria-label="Sua dúvida"
+                placeholder="O que você gostaria de saber? (Sua pergunta é totalmente anônima)"
+                maxlength="500"></textarea>
+            <div class="char-counter"><span id="charCount">0</span>/500</div>
+            <button id="submitBtn" class="btn-primary">Enviar Anonimamente</button>
+        </div>
+
+        <!-- Filtros -->
+        <div class="filters">
+            <select id="filterSelect" aria-label="Filtrar dúvidas">
+                <option value="all">Todas as dúvidas</option>
+                <option value="unanswered">Não respondidas</option>
+                <option value="answered">Respondidas</option>
+                <option value="mostVoted">Mais votadas</option>
+            </select>
+            <div class="stats">
+                <span id="totalDoubts">0</span> dúvidas •
+                <span id="unansweredCount">0</span> abertas
+            </div>
+        </div>
+
+        <div id="doubtsContainer" class="doubts-container">
+            <div class="empty-state" id="emptyState">
+                <p>✨ Nenhuma dúvida ainda. Seja o primeiro a perguntar!</p>
+            </div>
+        </div>
+
+        <!-- Modal -->
+        <div id="answerModal" class="modal">
+            <div class="modal-content">
+                <h3>Responder Dúvida</h3>
+                <p id="modalQuestion" class="modal-question"></p>
+                <textarea id="answerInput" aria-label="Sua resposta"
+                    placeholder="Digite sua resposta aqui..."></textarea>
+                <div class="modal-actions">
+                    <button id="cancelBtn" class="btn-secondary">Cancelar</button>
+                    <button id="submitAnswerBtn" class="btn-primary">Publicar Resposta</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="toast" class="toast hidden"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
